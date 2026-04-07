@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Affiliate AI Voice Pro - Standalone</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #0a0a0b; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
+        
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        input[type="range"] {
+            accent-color: #a855f7;
+        }
+    </style>
+</head>
+<body class="bg-[#0a0a0b] text-white selection:bg-purple-500/30">
+    <div id="root"></div>
+
+    <!-- Import Map for ESM Dependencies -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom": "https://esm.sh/react-dom@18.2.0/client",
+        "framer-motion": "https://esm.sh/framer-motion@10.16.4",
+        "lucide-react": "https://esm.sh/lucide-react@0.284.0",
+        "@google/genai": "https://esm.sh/@google/genai@0.1.0",
+        "react-markdown": "https://esm.sh/react-markdown@8.0.7",
+        "clsx": "https://esm.sh/clsx@2.0.0",
+        "tailwind-merge": "https://esm.sh/tailwind-merge@1.14.0"
+      }
+    }
+    </script>
+
+    <script type="module">
+        import React, { useState, useRef, useEffect } from 'react';
+        import ReactDOM from 'react-dom';
+        import { motion, AnimatePresence } from 'framer-motion';
+        import { 
+            Mic, Sparkles, Download, Play, Pause, Settings2, 
+            Volume2, RefreshCw, CheckCircle2, AlertCircle, 
+            Type, FileText, Key, ExternalLink
+        } from 'lucide-react';
+        import { GoogleGenAI } from "@google/genai";
+        import { clsx } from "clsx";
+        import { twMerge } from "tailwind-merge";
+        import ReactMarkdown from 'react-markdown';
+
+        // --- Utilities ---
+        function cn(...inputs) {
+            return twMerge(clsx(inputs));
+        }
+
+        // --- Constants ---
+        const VOICES = [
+            { id: 'Zephyr', name: 'Bambang (Tenang & Dalam)', gender: 'Pria' },
+            { id: 'Puck', name: 'Yanto (Energik)', gender: 'Pria' },
+            { id: 'Charon', name: 'Budi (Formal)', gender: 'Pria' },
+            { id: 'Kore', name: 'Siti (Lembut & Ramah)', gender: 'Wanita' },
+            { id: 'Fenrir', name: 'Gatot (Tegas)', gender: 'Pria' },
+        ];
+
+        // --- Main Component ---
+        function App() {
+            const [apiKey, setApiKey] = useState(window.GEMINI_API_KEY || '');
+            const [showApiKeyInput, setShowApiKeyInput] = useState(!window.GEMINI_API_KEY);
+            const [productName, setProductName] = useState('');
+            const [productDesc, setProductDesc] = useState('');
+            const [script, setScript] = useState('');
+            const [selectedVoice, setSelectedVoice] = useState(VOICES[0].id);
+            const [speed, setSpeed] = useState(1);
+            const [pitch, setPitch] = useState(1);
+            const [isGeneratingScript, setIsGeneratingScript] = useState(false);
+            const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
+            const [audioUrl, setAudioUrl] = useState(null);
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [error, setError] = useState(null);
+            
+            const audioRef = useRef(null);
+
+            const getGenAI = () => {
+                if (!apiKey) throw new Error("API Key belum diatur!");
+                return new GoogleGenAI({ apiKey });
+            };
+
+            const handleGenerateScript = async () => {
+                if (!productName) {
+                    setError('Nama produk harus diisi!');
+                    return;
+                }
+                setError(null);
+                setIsGeneratingScript(true);
+                try {
+                    const ai = getGenAI();
+                    const model = ai.models.generateContent({
+                        model: "gemini-3-flash-preview",
+                        contents: `Buatlah skrip iklan pendek (affiliate marketing) yang sangat menarik dan persuasif dalam Bahasa Indonesia untuk produk berikut:
+                        Nama Produk: ${productName}
+                        Deskripsi Produk: ${productDesc}
+                        
+                        Ketentuan Skrip:
+                        1. Gaya bahasa santai, kekinian (gaul), dan cocok untuk audiens TikTok/Reels/Shorts di Indonesia.
+                        2. Gunakan hook yang kuat di awal.
+                        3. Sertakan Call to Action (CTA) yang jelas.
+                        4. Berikan hanya teks skripnya saja tanpa tambahan penjelasan lain.`
+                    });
+                    const response = await model;
+                    setScript(response.text || "");
+                } catch (err) {
+                    setError(err.message || 'Gagal membuat skrip.');
+                    console.error(err);
+                } finally {
+                    setIsGeneratingScript(false);
+                }
+            };
+
+            const handleGenerateVoice = async () => {
+                if (!script) {
+                    setError('Skrip kosong! Buat skrip terlebih dahulu.');
+                    return;
+                }
+                setError(null);
+                setIsGeneratingVoice(true);
+                try {
+                    const ai = getGenAI();
+                    const response = await ai.models.generateContent({
+                        model: "gemini-2.5-flash-preview-tts",
+                        contents: [{ parts: [{ text: script }] }],
+                        config: {
+                            responseModalities: ["AUDIO"],
+                            speechConfig: {
+                                voiceConfig: {
+                                    prebuiltVoiceConfig: { voiceName: selectedVoice },
+                                },
+                            },
+                        },
+                    });
+
+                    const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                    if (!base64Audio) throw new Error("Gagal menghasilkan audio.");
+
+                    const blob = await fetch(`data:audio/wav;base64,${base64Audio}`).then(res => res.blob());
+                    const url = URL.createObjectURL(blob);
+                    setAudioUrl(url);
+                    if (audioRef.current) {
+                        audioRef.current.src = url;
+                        audioRef.current.playbackRate = speed;
+                    }
+                } catch (err) {
+                    setError(err.message || 'Gagal membuat suara.');
+                    console.error(err);
+                } finally {
+                    setIsGeneratingVoice(false);
+                }
+            };
+
+            const togglePlay = async () => {
+                if (audioRef.current) {
+                    if (isPlaying) {
+                        audioRef.current.pause();
+                    } else {
+                        try {
+                            await audioRef.current.play();
+                        } catch (err) {
+                            if (err.name !== 'AbortError') {
+                                console.error("Playback failed:", err);
+                            }
+                        }
+                    }
+                }
+            };
+
+            const downloadAudio = () => {
+                if (audioUrl) {
+                    const a = document.createElement('a');
+                    a.href = audioUrl;
+                    a.download = `${productName.replace(/\s+/g, '_')}_voice.wav`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
+            };
+
+            useEffect(() => {
+                if (audioRef.current) audioRef.current.playbackRate = speed;
+            }, [speed]);
+
+            return React.createElement('div', { className: "min-h-screen relative" }, [
+                // Background Glow
+                React.createElement('div', { className: "fixed inset-0 overflow-hidden pointer-events-none", key: "bg" }, [
+                    React.createElement('div', { className: "absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-purple-600/10 blur-[120px] rounded-full" }),
+                    React.createElement('div', { className: "absolute top-[20%] -right-[10%] w-[30%] h-[30%] bg-blue-600/10 blur-[120px] rounded-full" })
+                ]),
+
+                React.createElement('div', { className: "relative max-w-5xl mx-auto px-6 py-12", key: "content" }, [
+                    // Header
+                    React.createElement('header', { className: "flex items-center justify-between mb-16" }, [
+                        React.createElement('div', { className: "flex items-center gap-3" }, [
+                            React.createElement('div', { className: "w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20" }, 
+                                React.createElement(Mic, { className: "w-6 h-6 text-white" })
+                            ),
+                            React.createElement('h1', { className: "text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400" }, "VoiceAffiliate AI")
+                        ]),
+                        React.createElement('button', { 
+                            onClick: () => setShowApiKeyInput(!showApiKeyInput),
+                            className: "flex items-center gap-2 px-4 py-2 glass-panel rounded-full text-sm text-gray-400 hover:text-white transition-all"
+                        }, [
+                            React.createElement(Key, { className: "w-4 h-4" }),
+                            React.createElement('span', null, apiKey ? "API Key Set" : "Set API Key")
+                        ])
+                    ]),
+
+                    // API Key Input Panel
+                    React.createElement(AnimatePresence, null, showApiKeyInput && React.createElement(motion.div, {
+                        initial: { height: 0, opacity: 0 },
+                        animate: { height: 'auto', opacity: 1 },
+                        exit: { height: 0, opacity: 0 },
+                        className: "mb-8 overflow-hidden"
+                    }, React.createElement('div', { className: "glass-panel rounded-2xl p-6 border-purple-500/30" }, [
+                        React.createElement('div', { className: "flex items-center justify-between mb-4" }, [
+                            React.createElement('label', { className: "text-sm font-medium text-purple-400" }, "Gemini API Key"),
+                            React.createElement('a', { 
+                                href: "https://aistudio.google.com/app/apikey", 
+                                target: "_blank", 
+                                className: "text-xs text-gray-500 hover:text-blue-400 flex items-center gap-1" 
+                            }, [
+                                "Dapatkan API Key Gratis",
+                                React.createElement(ExternalLink, { className: "w-3 h-3" })
+                            ])
+                        ]),
+                        React.createElement('div', { className: "flex gap-3" }, [
+                            React.createElement('input', {
+                                type: "password",
+                                value: apiKey,
+                                onChange: (e) => setApiKey(e.target.value),
+                                placeholder: "Masukkan API Key Anda di sini...",
+                                className: "flex-1 bg-black/40 border border-white/10 rounded-xl px-4 py-2 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                            }),
+                            React.createElement('button', {
+                                onClick: () => setShowApiKeyInput(false),
+                                className: "px-6 py-2 bg-purple-600 rounded-xl font-medium hover:bg-purple-500 transition-all"
+                            }, "Simpan")
+                        ])
+                    ]))),
+
+                    React.createElement('div', { className: "grid grid-cols-1 lg:grid-cols-12 gap-8" }, [
+                        // Left Column
+                        React.createElement('div', { className: "lg:col-span-7 space-y-8" }, [
+                            React.createElement('section', { className: "glass-panel rounded-3xl p-8" }, [
+                                React.createElement('div', { className: "flex items-center gap-2 mb-6" }, [
+                                    React.createElement(Sparkles, { className: "w-5 h-5 text-purple-400" }),
+                                    React.createElement('h2', { className: "text-lg font-semibold" }, "Detail Produk")
+                                ]),
+                                React.createElement('div', { className: "space-y-6" }, [
+                                    React.createElement('div', null, [
+                                        React.createElement('label', { className: "block text-sm font-medium text-gray-400 mb-2" }, "Nama Produk"),
+                                        React.createElement('input', {
+                                            type: "text",
+                                            value: productName,
+                                            onChange: (e) => setProductName(e.target.value),
+                                            placeholder: "Contoh: Headphone Wireless",
+                                            className: "w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                                        })
+                                    ]),
+                                    React.createElement('div', null, [
+                                        React.createElement('label', { className: "block text-sm font-medium text-gray-400 mb-2" }, "Deskripsi Produk"),
+                                        React.createElement('textarea', {
+                                            value: productDesc,
+                                            onChange: (e) => setProductDesc(e.target.value),
+                                            placeholder: "Jelaskan fitur utama...",
+                                            rows: 4,
+                                            className: "w-full bg-black/40 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500/50 resize-none"
+                                        })
+                                    ]),
+                                    React.createElement('button', {
+                                        onClick: handleGenerateScript,
+                                        disabled: isGeneratingScript || !productName || !apiKey,
+                                        className: cn(
+                                            "w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all",
+                                            isGeneratingScript || !productName || !apiKey ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-white text-black hover:bg-gray-200"
+                                        )
+                                    }, [
+                                        isGeneratingScript ? React.createElement(RefreshCw, { className: "w-5 h-5 animate-spin" }) : React.createElement(Type, { className: "w-5 h-5" }),
+                                        isGeneratingScript ? 'Menghasilkan Skrip...' : 'Buat Skrip'
+                                    ])
+                                ])
+                            ]),
+
+                            React.createElement(AnimatePresence, null, script && React.createElement(motion.section, {
+                                initial: { opacity: 0, y: 20 },
+                                animate: { opacity: 1, y: 0 },
+                                className: "glass-panel rounded-3xl p-8"
+                            }, [
+                                React.createElement('div', { className: "flex items-center justify-between mb-6" }, [
+                                    React.createElement('div', { className: "flex items-center gap-2" }, [
+                                        React.createElement(FileText, { className: "w-5 h-5 text-blue-400" }),
+                                        React.createElement('h2', { className: "text-lg font-semibold" }, "Skrip yang Dihasilkan")
+                                    ]),
+                                    React.createElement('button', { onClick: () => setScript(''), className: "text-xs text-gray-500 hover:text-white" }, "Hapus")
+                                ]),
+                                React.createElement('div', { className: "bg-black/40 border border-white/5 rounded-2xl p-6 text-gray-300 leading-relaxed prose prose-invert max-w-none" }, 
+                                    React.createElement(ReactMarkdown, null, script)
+                                )
+                            ]))
+                        ]),
+
+                        // Right Column
+                        React.createElement('div', { className: "lg:col-span-5 space-y-8" }, [
+                            React.createElement('section', { className: "glass-panel rounded-3xl p-8 sticky top-8" }, [
+                                React.createElement('div', { className: "flex items-center gap-2 mb-8" }, [
+                                    React.createElement(Settings2, { className: "w-5 h-5 text-blue-400" }),
+                                    React.createElement('h2', { className: "text-lg font-semibold" }, "Pengaturan Suara")
+                                ]),
+                                React.createElement('div', { className: "space-y-8" }, [
+                                    React.createElement('div', null, [
+                                        React.createElement('label', { className: "block text-sm font-medium text-gray-400 mb-4 text-center" }, "Pilih Karakter Suara"),
+                                        React.createElement('div', { className: "grid grid-cols-1 gap-3" }, VOICES.map(voice => 
+                                            React.createElement('button', {
+                                                key: voice.id,
+                                                onClick: () => setSelectedVoice(voice.id),
+                                                className: cn(
+                                                    "flex items-center justify-between px-4 py-3 rounded-xl border transition-all text-left",
+                                                    selectedVoice === voice.id ? "bg-purple-600/20 border-purple-500 text-white" : "bg-black/40 border-white/5 text-gray-400 hover:border-white/20"
+                                                )
+                                            }, [
+                                                React.createElement('div', { className: "flex flex-col" }, [
+                                                    React.createElement('span', { className: "font-medium" }, voice.name),
+                                                    React.createElement('span', { className: "text-[10px] uppercase tracking-wider opacity-50" }, voice.gender)
+                                                ]),
+                                                selectedVoice === voice.id && React.createElement(CheckCircle2, { className: "w-4 h-4 text-purple-400" })
+                                            ])
+                                        ))
+                                    ]),
+                                    React.createElement('div', { className: "space-y-6" }, [
+                                        React.createElement('div', null, [
+                                            React.createElement('div', { className: "flex justify-between mb-2" }, [
+                                                React.createElement('label', { className: "text-sm font-medium text-gray-400" }, "Kecepatan"),
+                                                React.createElement('span', { className: "text-xs text-purple-400 font-mono" }, speed + "x")
+                                            ]),
+                                            React.createElement('input', {
+                                                type: "range", min: "0.5", max: "2", step: "0.1", value: speed,
+                                                onChange: (e) => setSpeed(parseFloat(e.target.value)),
+                                                className: "w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                                            })
+                                        ]),
+                                        React.createElement('div', null, [
+                                            React.createElement('div', { className: "flex justify-between mb-2" }, [
+                                                React.createElement('label', { className: "text-sm font-medium text-gray-400" }, "Intensitas Nada"),
+                                                React.createElement('span', { className: "text-xs text-blue-400 font-mono" }, pitch + "x")
+                                            ]),
+                                            React.createElement('input', {
+                                                type: "range", min: "0.5", max: "1.5", step: "0.1", value: pitch,
+                                                onChange: (e) => setPitch(parseFloat(e.target.value)),
+                                                className: "w-full h-1.5 bg-white/10 rounded-lg appearance-none cursor-pointer"
+                                            })
+                                        ])
+                                    ]),
+                                    React.createElement('button', {
+                                        onClick: handleGenerateVoice,
+                                        disabled: isGeneratingVoice || !script || !apiKey,
+                                        className: cn(
+                                            "w-full py-4 rounded-xl font-semibold flex items-center justify-center gap-2 transition-all shadow-xl shadow-purple-500/10",
+                                            isGeneratingVoice || !script || !apiKey ? "bg-gray-800 text-gray-500 cursor-not-allowed" : "bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:opacity-90"
+                                        )
+                                    }, [
+                                        isGeneratingVoice ? React.createElement(RefreshCw, { className: "w-5 h-5 animate-spin" }) : React.createElement(Volume2, { className: "w-5 h-5" }),
+                                        isGeneratingVoice ? 'Mensintesis Suara...' : 'Hasilkan Voice-Over'
+                                    ]),
+                                    React.createElement(AnimatePresence, null, audioUrl && React.createElement(motion.div, {
+                                        initial: { opacity: 0, scale: 0.95 },
+                                        animate: { opacity: 1, scale: 1 },
+                                        className: "bg-black/60 border border-white/10 rounded-2xl p-6 space-y-4"
+                                    }, [
+                                        React.createElement('div', { className: "flex items-center justify-between" }, [
+                                            React.createElement('span', { className: "text-xs font-medium text-gray-500 uppercase tracking-widest" }, "Pratinjau Hasil"),
+                                            React.createElement('div', { className: "flex gap-2" }, [
+                                                React.createElement('button', { onClick: togglePlay, className: "w-10 h-10 bg-white text-black rounded-full flex items-center justify-center hover:bg-gray-200" }, 
+                                                    isPlaying ? React.createElement(Pause, { className: "w-5 h-5" }) : React.createElement(Play, { className: "w-5 h-5 ml-0.5" })
+                                                ),
+                                                React.createElement('button', { onClick: downloadAudio, className: "w-10 h-10 bg-white/10 text-white rounded-full flex items-center justify-center hover:bg-white/20" }, 
+                                                    React.createElement(Download, { className: "w-5 h-5" })
+                                                )
+                                            ])
+                                        ]),
+                                        React.createElement('div', { className: "h-1 bg-white/10 rounded-full overflow-hidden" }, 
+                                            React.createElement(motion.div, { 
+                                                className: "h-full bg-gradient-to-r from-purple-500 to-blue-500",
+                                                animate: { width: isPlaying ? '100%' : '0%' },
+                                                transition: { duration: isPlaying ? 10 : 0, ease: "linear" }
+                                            })
+                                        ),
+                                        React.createElement('audio', { ref: audioRef, onEnded: () => setIsPlaying(false), className: "hidden" })
+                                    ]))
+                                ])
+                            ])
+                        ])
+                    ]),
+
+                    // Error Toast
+                    React.createElement(AnimatePresence, null, error && React.createElement(motion.div, {
+                        initial: { opacity: 0, y: 50 },
+                        animate: { opacity: 1, y: 0 },
+                        exit: { opacity: 0, y: 50 },
+                        className: "fixed bottom-8 left-1/2 -translate-x-1/2 bg-red-500 text-white px-6 py-3 rounded-full flex items-center gap-2 shadow-2xl"
+                    }, [
+                        React.createElement(AlertCircle, { className: "w-5 h-5" }),
+                        React.createElement('span', { className: "font-medium" }, error)
+                    ]))
+                ])
+            ]);
+        }
+
+        // Inject current API key if available from environment
+        window.GEMINI_API_KEY = "YOUR_API_KEY_HERE"; // Will be replaced manually or used via UI
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(React.createElement(App));
+    </script>
+</body>
+</html>
